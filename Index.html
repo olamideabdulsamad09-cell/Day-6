@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Toast Notifications</title>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+
+    :root {
+      --toast-bg:      #1f2937;
+      --toast-fg:      #f9fafb;
+      --toast-radius:  10px;
+      --toast-success: #10b981;
+      --toast-error:   #ef4444;
+      --toast-warning: #f59e0b;
+      --toast-info:    #3b82f6;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      gap: 1.5rem;
+      background: #f3f4f6;
+      color: #111827;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    }
+
+    .demo { display: flex; flex-wrap: wrap; gap: .5rem; justify-content: center; max-width: 30rem; }
+    .demo button {
+      font: inherit;
+      font-weight: 600;
+      padding: .6rem 1rem;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      background: #fff;
+      cursor: pointer;
+      transition: background .15s, border-color .15s;
+    }
+    .demo button:hover { background: #f9fafb; border-color: #9ca3af; }
+    .demo button:focus-visible { outline: 2px solid #3b82f6; outline-offset: 2px; }
+
+    /* ---------- Toast container ---------- */
+    .toast-container {
+      position: fixed;
+      top: max(1rem, env(safe-area-inset-top));
+      right: max(1rem, env(safe-area-inset-right));
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      gap: .75rem;
+      width: min(380px, calc(100vw - 2rem));
+      pointer-events: none;           /* clicks pass through empty space */
+    }
+
+    /* ---------- Toast ---------- */
+    .toast {
+      position: relative;
+      display: flex;
+      align-items: flex-start;
+      gap: .75rem;
+      padding: .875rem 1rem;
+      overflow: hidden;
+      background: var(--toast-bg);
+      color: var(--toast-fg);
+      border-radius: var(--toast-radius);
+      border-left: 4px solid var(--toast-accent, #6b7280);
+      box-shadow: 0 10px 25px -5px rgb(0 0 0 / .35), 0 4px 6px -4px rgb(0 0 0 / .3);
+      font-size: .875rem;
+      line-height: 1.45;
+      pointer-events: auto;
+
+      /* enter/leave animation */
+      opacity: 0;
+      transform: translateX(calc(100% + 1.5rem));
+      transition:
+        transform .3s cubic-bezier(.21, 1.02, .73, 1),
+        opacity   .3s ease;
+    }
+
+    .toast.is-visible  { opacity: 1; transform: translateX(0); }
+    .toast.is-leaving  { opacity: 0; transform: translateX(calc(100% + 1.5rem)); }
+
+    .toast--success { --toast-accent: var(--toast-success); }
+    .toast--error   { --toast-accent: var(--toast-error); }
+    .toast--warning { --toast-accent: var(--toast-warning); }
+    .toast--info    { --toast-accent: var(--toast-info); }
+
+    .toast__icon {
+      flex: none;
+      display: grid;
+      place-items: center;
+      width: 1.25rem;
+      height: 1.25rem;
+      margin-top: .1rem;
+      color: var(--toast-accent);
+    }
+    .toast__icon svg { width: 100%; height: 100%; display: block; }
+
+    .toast__message {
+      flex: 1 1 auto;
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+
+    /* buttons */
+    .toast__close,
+    .toast__action {
+      font: inherit;
+      border: 0;
+      background: none;
+      color: inherit;
+      cursor: pointer;
+      border-radius: 6px;
+    }
+
+    .toast__close {
+      flex: none;
+      display: grid;
+      place-items: center;
+      width: 1.5rem;
+      height: 1.5rem;
+      opacity: .6;
+      transition: opacity .15s, background-color .15s;
+    }
+    .toast__close:hover { opacity: 1; background: rgb(255 255 255 / .12); }
+    .toast__close svg { width: 1rem; height: 1rem; display: block; }
+
+    .toast__action {
+      flex: none;
+      align-self: center;
+      padding: .25rem .625rem;
+      font-size: .8125rem;
+      font-weight: 600;
+      color: var(--toast-accent);
+      background: rgb(255 255 255 / .08);
+      transition: background-color .15s;
+    }
+    .toast__action:hover { background: rgb(255 255 255 / .18); }
+
+    .toast__close:focus-visible,
+    .toast__action:focus-visible {
+      outline: 2px solid var(--toast-accent);
+      outline-offset: 2px;
+    }
+
+    /* auto-dismiss progress bar */
+    .toast__progress {
+      position: absolute;
+      inset: auto 0 0 0;
+      height: 3px;
+      background: var(--toast-accent);
+      transform-origin: left center;
+      animation: toast-progress var(--toast-duration, 4000ms) linear forwards;
+    }
+    @keyframes toast-progress {
+      from { transform: scaleX(1); }
+      to   { transform: scaleX(0); }
+    }
+
+    /* ---------- Mobile: slide up from bottom ---------- */
+    @media (max-width: 480px) {
+      .toast-container {
+        top: auto;
+        right: .75rem;
+        bottom: max(.75rem, env(safe-area-inset-bottom));
+        left: .75rem;
+        width: auto;
+      }
+      .toast            { transform: translateY(calc(100% + 1rem)); }
+      .toast.is-visible { transform: translateY(0); }
+      .toast.is-leaving { transform: translateY(calc(100% + 1rem)); }
+    }
+
+    /* ---------- Reduced motion ---------- */
+    @media (prefers-reduced-motion: reduce) {
+      .toast {
+        transition: opacity .15s ease;
+        transform: none;
+      }
+      .toast.is-visible,
+      .toast.is-leaving { transform: none; }
+      .toast__progress  { display: none; }
+    }
+  </style>
+</head>
+
+<body>
+  <main class="demo">
+    <button data-toast="success">Success</button>
+    <button data-toast="error">Error</button>
+    <button data-toast="warning">Warning</button>
+    <button data-toast="info">Info</button>
+    <button data-toast="action">With action</button>
+  </main>
+
+  <!-- Live region must exist in the DOM before toasts are injected -->
+  <div id="toast-container" class="toast-container"
+       aria-live="polite" aria-atomic="false" aria-relevant="additions"></div>
+
+  <script>
+    /* =========================================================
+       Icons (inline SVG, inherits currentColor)
+       ========================================================= */
+    const ICONS = {
+      success: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>`,
+      error:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>`,
+      warning: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>`,
+      info:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg>`,
+      close:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>`
+    };
+
+    const DEFAULT_DURATION = 4000;
+
+    /* =========================================================
+       ToastManager
+       ========================================================= */
+    class ToastManager {
+      constructor(container, { max = 5 } = {}) {
+        this.container = container;
+        this.max = max;
+        this.toasts = new Map(); // element -> { timer, remaining, start, paused, closing }
+      }
+
+      /**
+       * @param {string} message
+       * @param {object} [options]
+       * @param {'success'|'error'|'warning'|'info'} [options.type='info']
+       * @param {number} [options.duration=4000]  ms; 0 = sticky (no auto-dismiss)
+       * @param {boolean} [options.dismissible=true]
+       * @param {{label: string, onClick?: Function}} [options.action]
+       * @returns {HTMLElement}
+       */
+      show(message, options = {}) {
+        const {
+          type = 'info',
+          duration = DEFAULT_DURATION,
+          dismissible = true,
+          action = null
+        } = options;
+
+        // Evict oldest toasts beyond the limit
+        while (this.container.children.length >= this.max) {
+          this.dismiss(this.container.firstElementChild);
+        }
+
+        /* ---- Build toast ---- */
+        const el = document.createElement('div');
+        el.className = `toast toast--${type}`;
+
+        const icon = document.createElement('span');
+        icon.className = 'toast__icon';
+        icon.innerHTML = ICONS[type] || ICONS.info;
+
+        const body = document.createElement('div');
+        body.className = 'toast__message';
+        body.textContent = message;
+
+        el.append(icon, body);
+
+        if (action) {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'toast__action';
+          btn.textContent = action.label;
+          btn.addEventListener('click', () => {
+            action.onClick?.();
+            this.dismiss(el);
+          });
+          el.append(btn);
+        }
+
+        if (dismissible) {
+          const close = document.createElement('button');
+          close.type = 'button';
+          close.className = 'toast__close';
+          close.setAttribute('aria-label', 'Dismiss notification');
+          close.innerHTML = ICONS.close;
+          close.addEventListener('click', () => this.dismiss(el));
+          el.append(close);
+        }
+
+        if (duration > 0) {
+          const bar = document.createElement('div');
+          bar.className = 'toast__progress';
+          bar.style.setProperty('--toast-duration', `${duration}ms`);
+          el.append(bar);
+        }
+
+        /* ---- Mount + animate in ---- */
+        this.container.append(el);
+
+        this.toasts.set(el, {
+          timer: null,
+          remaining: duration,
+          start: 0,
+          paused: false,
+          closing: false
+        });
+
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => el.classList.add('is-visible'))
+        );
+
+        /* ---- Auto-dismiss with pause on hover/focus ---- */
+        if (duration > 0) {
+          this._startTimer(el);
+          el.addEventListener('mouseenter', () => this._pause(el));
+          el.addEventListener('mouseleave', () => this._resume(el));
+          el.addEventListener('focusin',    () => this._pause(el));
+          el.addEventListener('focusout',   () => this._resume(el));
+        }
+
+        return el;
+      }
+
+      /* ---- Convenience wrappers ---- */
+      success(message, options) { return this.show(message, { ...options, type: 'success' }); }
+      error(message, options)   { return this.show(message, { ...options, type: 'error' }); }
+      warning(message, options) { return this.show(message, { ...options, type: 'warning' }); }
+      info(message, options)    { return this.show(message, { ...options, type: 'info' }); }
+
+      /* ---- Dismiss ---- */
+      dismiss(el) {
+        const state = this.toasts.get(el);
+        if (!state || state.closing) return;
+
+        state.closing = true;
+        clearTimeout(state.timer);
+
+        el.classList.remove('is-visible');
+        el.classList.add('is-leaving');
+
+        const remove = () => {
+          el.remove();
+          this.toasts.delete(el);
+        };
+
+        el.addEventListener('transitionend', remove, { once: true });
+        setTimeout(remove, 400); // fallback if transitionend never fires
+      }
+
+      dismissAll() {
+        [...this.toasts.keys()].forEach(el => this.dismiss(el));
+      }
+
+      /* ---- Timer internals ---- */
+      _startTimer(el) {
+        const state = this.toasts.get(el);
+        if (!state || state.remaining <= 0) return;
+
+        state.start = performance.now();
+        state.timer = setTimeout(() => this.dismiss(el), state.remaining);
+      }
+
+      _pause(el) {
+        const state = this.toasts.get(el);
+        if (!state || state.paused || !state.timer) return;
+
+        clearTimeout(state.timer);
+        state.timer = null;
+        state.remaining -= performance.now() - state.start;
+        state.paused = true;
+
+        const bar = el.querySelector('.toast__progress');
+        if (bar) bar.style.animationPlayState = 'paused';
+      }
+
+      _resume(el) {
+        const state = this.toasts.get(el);
+        if (!state || !state.paused) return;
+
+        state.paused = false;
+
+        const bar = el.querySelector('.toast__progress');
+        if (bar) bar.style.animationPlayState = 'running';
+
+        if (state.remaining > 0) this._startTimer(el);
+        else this.dismiss(el);
+      }
+    }
+
+    /* =========================================================
+       Wire it up
+       ========================================================= */
+    const toast = new ToastManager(document.getElementById('toast-container'));
+
+    // Expose globally if you like: window.toast = toast;
+
+    const MESSAGES = {
+      success: 'Changes saved successfully.',
+      error:   'Could not save your changes. Please try again.',
+      warning: 'Your session expires in 5 minutes.',
+      info:    'A new version of the app is available.'
+    };
+
+    document.querySelectorAll('[data-toast]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const type = btn.dataset.toast;
+
+        // Demo: toast with an action button (sticky-ish, 8s)
+        if (type === 'action') {
+          toast.show('Message moved to Trash.', {
+            type: 'info',
+            duration: 8000,
+            action: {
+              label: 'Undo',
+              onClick: () => toast.success('Message restored.')
+            }
+          });
+          return;
+        }
+
+        toast.show(MESSAGES[type], {
+          type,
+          duration: type === 'error' ? 6000 : 4000
+        });
+      });
+    });
+  </script>
+</body>
+</html>
